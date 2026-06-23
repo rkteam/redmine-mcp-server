@@ -7,6 +7,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Promotional demo page under `pages/`, deployed to GitHub Pages on version tags via a new `deploy-demo.yml` workflow. It is a scripted, client-side walkthrough of an AI agent triaging a sample Redmine sprint backlog (list, read, reassign, comment, log time, close), with tool-call request/response JSON that matches the server's real response shapes, a Kanban board that updates as the agent works, and a light/dark theme toggle. No live Redmine is connected.
+
+### Fixed
+- `get_redmine_issue` now returns journal field-change `details` (status, assignee, custom-field edits) and no longer drops journals that have no note text. The `_journals_to_list` helper previously skipped any journal whose `notes` was empty via `if not notes: continue` and never serialized the `details` array, so field-only history was lost and `details` was missing even on journals with notes. Journals are now kept when they have a note **or** field-change details, and each entry includes `details` (`property`, `name`, `old_value`, `new_value`) plus `private_notes`. `get_private_notes` exposes `details` as well. ([#161](https://github.com/jztan/redmine-mcp-server/issues/161))
+
+### Security
+- Free-form journal field-change values now receive the same prompt-injection wrapping as journal notes. Custom-field values (`cf`), `description`/`subject` edits, and attachment filenames in `details` are wrapped in `<insecure-content-{boundary}>` tags, so the newly surfaced field-change history cannot smuggle injected instructions past an LLM consumer. Structured values (status, assignee, priority IDs, dates, numbers) are left raw to avoid bloating output with boundary tags. ([#161](https://github.com/jztan/redmine-mcp-server/issues/161))
+
+### Contributors
+- @martindglaser — fix missing journal field-change details in `get_redmine_issue` ([#163](https://github.com/jztan/redmine-mcp-server/pull/163))
+
+## [2.3.1] - 2026-06-20
+### Security
+- Bump `python-multipart` 0.0.29 to 0.0.32 to clear CVE-2026-53539 and CVE-2026-53538 (both fixed upstream in 0.0.30). The direct floor in `pyproject.toml` is also raised from `>=0.0.27` to `>=0.0.30` so the fix reaches PyPI installs, not only the pinned lockfile. ([#150](https://github.com/jztan/redmine-mcp-server/pull/150))
+- Bump `starlette` 1.0.1 to 1.3.1 to clear four advisories: CVE-2026-48818 and CVE-2026-48817 (fixed in 1.1.0), CVE-2026-54282 (1.3.0), and CVE-2026-54283 (1.3.1). `starlette` is now also a declared direct dependency (the server imports it directly) with a `>=1.3.1` floor, so PyPI installs cannot resolve a vulnerable version. Dependabot does not propose transitive bumps on its own, so this was applied manually. ([#162](https://github.com/jztan/redmine-mcp-server/pull/162))
+- Bump `cryptography` 46.0.7 to 49.0.0 to clear GHSA-537c-gmf6-5ccf (fixed in 48.0.1). `cryptography` is a transitive dependency via `authlib` and `joserfc`; a direct `>=48.0.1` floor is added to `pyproject.toml` so the fix reaches PyPI installs. ([#162](https://github.com/jztan/redmine-mcp-server/pull/162))
+
+### Changed
+- Remove the unused `fastapi[standard]` dependency. The server is built directly on Starlette, FastMCP, and Uvicorn and never imported FastAPI, so dropping it removes a large unused transitive tree (`typer`, `sentry-sdk`, `jinja2`, `uvloop`, `fastapi-cli`, `orjson`, `ujson`, and others) from installs. `starlette` is now declared directly to keep the dependency it actually uses explicit. The PyPI `Changelog` project URL now points at the `develop` branch instead of a stale `master` path.
+- Rewrite the package description to state what the server does ("MCP server that lets AI assistants manage Redmine issues, projects, wikis, and time tracking") instead of marketing adjectives, applied consistently across `pyproject.toml`, `server.json`, and the GitHub repository description.
+- Update PyPI trove classifiers to match the project's status: `Development Status` moves from `4 - Beta` to `5 - Production/Stable`, and `Python :: 3 :: Only`, `Bug Tracking`, `System Administrators`, `OS Independent`, and `Web Environment` classifiers are added for accuracy and discoverability.
+- Bump runtime dependencies `fastmcp` 3.3.1 to 3.4.2 ([#152](https://github.com/jztan/redmine-mcp-server/pull/152)) and `uvicorn` 0.48.0 to 0.49.0, which pulls `httptools` 0.8.0 ([#151](https://github.com/jztan/redmine-mcp-server/pull/151)). The OAuth discovery and introspection paths were smoke-tested under FastMCP 3.4.2.
+- Bump development and CI tooling: `pytest` 9.0.3 to 9.1.1 ([#160](https://github.com/jztan/redmine-mcp-server/pull/160)), `pytest-asyncio` 1.3.0 to 1.4.0 ([#143](https://github.com/jztan/redmine-mcp-server/pull/143)), `actions/checkout` to 6.0.3 ([#142](https://github.com/jztan/redmine-mcp-server/pull/142)), `astral-sh/setup-uv` to 8.2.0 ([#149](https://github.com/jztan/redmine-mcp-server/pull/149)), and `codecov/codecov-action` 6.0.1 to 7.0.0 ([#148](https://github.com/jztan/redmine-mcp-server/pull/148)).
 
 ## [2.3.0] - 2026-06-12
 ### Added
@@ -895,6 +919,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive authentication support (username/password and API key)
 - Docker containerization support
 
+[2.3.1]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.1
 [2.3.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.3.0
 [2.2.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.2.0
 [2.1.0]: https://github.com/jztan/redmine-mcp-server/releases/tag/v2.1.0

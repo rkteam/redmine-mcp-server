@@ -1308,6 +1308,47 @@ When logging time against a specific project, always call with `project_id` firs
 
 ---
 
+### `get_time_entry_report`
+
+Get aggregated time entry report from Redmine.
+
+Calls `GET /time_entries/report.json` (or the project-scoped variant `GET /projects/:id/time_entries/report.json`) to return hours summarised by grouping criteria and broken into time-period columns. Unlike `list_time_entries`, which returns individual log rows, this endpoint returns grouped/aggregated totals — suitable for timesheets, billing summaries, and workload overviews.
+
+**Parameters:**
+- `project_id` (integer or string, optional): Limit the report to one project (numeric ID or string identifier).
+- `from_date` (string, optional): Start of custom date range (`YYYY-MM-DD`). Mutually exclusive with `period`.
+- `to_date` (string, optional): End of custom date range (`YYYY-MM-DD`). Mutually exclusive with `period`.
+- `period` (string, optional): Predefined time window. Mutually exclusive with `from_date`/`to_date`. One of: `"today"`, `"this_week"`, `"last_week"`, `"this_month"`, `"last_month"`, `"this_year"`.
+- `user_id` (integer, optional): Filter entries by user ID.
+- `activity_id` (integer, optional): Filter entries by activity ID.
+- `criteria` (array of strings, optional): Row grouping. One or more of: `"user"`, `"project"`, `"issue"`, `"activity"`, `"version"`. Defaults to `["user"]`.
+- `columns` (string, optional): Column time granularity — `"day"`, `"week"`, `"month"` (default), `"year"`.
+
+**Returns:** Raw Redmine report JSON with aggregated hours keyed by criteria and time-period columns, or `{"error": "..."}` on failure.
+
+**Example — hours per user this month:**
+```python
+get_time_entry_report(period="this_month", criteria=["user"], columns="month")
+```
+
+**Example — hours per user and activity for a custom date range:**
+```python
+get_time_entry_report(
+    project_id="my-project",
+    from_date="2024-01-01",
+    to_date="2024-03-31",
+    criteria=["user", "activity"],
+    columns="week",
+)
+```
+
+**Notes:**
+- Read-only tool; not affected by `REDMINE_MCP_READ_ONLY`.
+- `period` and `from_date`/`to_date` are mutually exclusive — specifying both returns an error.
+- Use `list_time_entry_activities` to look up valid `activity_id` values.
+
+---
+
 ## Discovery / Enumeration Tools
 
 These tools help LLMs discover valid IDs (trackers, statuses, priorities, users, saved queries) without guessing. Call these **before** create/update tools that require the corresponding ID.

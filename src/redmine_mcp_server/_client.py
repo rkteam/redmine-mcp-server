@@ -19,8 +19,9 @@ Tests patch this module's attributes directly, e.g.
 import logging
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
+import httpx
 from dotenv import load_dotenv
 from fastmcp.server.dependencies import get_access_token
 from redminelib import Redmine
@@ -157,6 +158,44 @@ def _build_legacy_client() -> Redmine:
             "Set REDMINE_AUTH_MODE=oauth or oauth-proxy, or configure "
             "REDMINE_API_KEY / REDMINE_USERNAME+REDMINE_PASSWORD."
         )
+
+
+async def _raw_get(
+    path: str,
+    params: Optional[List[Tuple[str, str]]] = None,
+) -> httpx.Response:
+    """Authenticated GET for Redmine endpoints not covered by python-redmine."""
+    if not REDMINE_URL:
+        raise ValueError("REDMINE_URL is not configured.")
+
+    url = f"{REDMINE_URL.rstrip('/')}{path}"
+    headers: Dict[str, str] = {}
+    auth = None
+
+    if REDMINE_AUTH_MODE in ("oauth", "oauth-proxy"):
+        token = get_access_token()
+        if token is not None and token.token:
+            headers["Authorization"] = f"Bearer {token.token}"
+        else:
+            raise ValueError("OAuth mode: no access token available.")
+    elif REDMINE_API_KEY:
+        headers["X-Redmine-API-Key"] = REDMINE_API_KEY
+    elif REDMINE_USERNAME and REDMINE_PASSWORD:
+        auth = (REDMINE_USERNAME, REDMINE_PASSWORD)
+    else:
+        raise ValueError(
+            "No Redmine authentication configured. "
+            "Set REDMINE_API_KEY or REDMINE_USERNAME/REDMINE_PASSWORD."
+        )
+
+    ssl_config = _build_requests_config()
+    try:
+        async with httpx.AsyncClient(**ssl_config) as client:
+            return await client.get(url, params=params, headers=headers, auth=auth)
+    except httpx.TimeoutException:
+        raise TimeoutError(f"Connection to Redmine at {REDMINE_URL} timed out.")
+    except httpx.RequestError as exc:
+        raise ConnectionError(str(exc))
 
 
 def _get_redmine_client() -> Redmine:
