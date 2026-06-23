@@ -12,6 +12,14 @@ A Model Context Protocol (MCP) server that integrates with Redmine project manag
 
 **mcp-name: io.github.jztan/redmine-mcp-server**
 
+<p align="center">
+  <a href="https://redmine-mcp-server.jztan.com">
+    <img src="https://raw.githubusercontent.com/jztan/redmine-mcp-server/develop/assets/redmine-mcp-demo.gif" alt="An AI agent triaging a Redmine sprint backlog through redmine-mcp-server" width="820" />
+  </a>
+</p>
+
+<p align="center"><sub>An AI agent triaging a Redmine sprint through redmine-mcp-server. <a href="https://redmine-mcp-server.jztan.com">Try the live demo →</a></sub></p>
+
 ## [Tool reference](./docs/tool-reference.md) | [Changelog](./CHANGELOG.md) | [Contributing](./docs/contributing.md) | [Troubleshooting](./docs/troubleshooting.md)
 
 ## Features
@@ -475,7 +483,16 @@ curl http://localhost:8000/health
 
 ## Available Tools
 
-This MCP server provides 45 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, and 5 plugin-gated tools that opt in via env vars, for a maximum of 46 when all enabled). For detailed documentation, see [Tool Reference](./docs/tool-reference.md).
+This MCP server provides 45 tools for interacting with Redmine (plus 1 operator tool exposed by `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`, and 5 plugin-gated tools that opt in via env vars, for a maximum of 46 when all enabled). For full documentation of every tool, see the [Tool Reference](./docs/tool-reference.md).
+
+**Core tools (40, always available):** Project Management (9), Issue Operations (13), Time Tracking (4), Discovery / Enumeration (6), Search & Wiki (2), File Operations (4), Gantt (1), Meta (1).
+
+**Plugin-gated tools (5, opt in via env var):** Checklists (2), Products (1), Contacts / CRM (1), Documents / DMSF (1). Each requires the matching Redmine plugin installed **and** its env flag set; they stay hidden from `tools/list` otherwise.
+
+**Operator tools (1, admin-gated):** `cleanup_attachment_files`, registered only when `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true`.
+
+<details>
+<summary><strong>Full tool list with descriptions</strong></summary>
 
 ### Core tools (40, always available)
 
@@ -561,6 +578,8 @@ Hidden from `tools/list` by default. Set `REDMINE_MCP_EXPOSE_ADMIN_TOOLS=true` t
 
 - [`cleanup_attachment_files`](docs/tool-reference.md#cleanup_attachment_files) - Manually trigger cleanup of expired attachment files (the background cleanup task runs automatically regardless)
 
+</details>
+
 
 ## Docker Deployment
 
@@ -610,6 +629,18 @@ If you run into any issues, checkout our [troubleshooting guide](./docs/troubles
 ## Contributing
 
 Contributions are welcome! Please see our [contributing guide](./docs/contributing.md) for details.
+
+## Contributors
+
+Thank you to everyone who has helped improve this project through code, reviews, testing, and feature requests:
+
+[@sebastianelsner](https://github.com/sebastianelsner) · [@mihajlovicjj](https://github.com/mihajlovicjj) · [@aadnehovda](https://github.com/aadnehovda) · [@martindglaser](https://github.com/martindglaser) · [@Vitexus](https://github.com/Vitexus) · [@timcomport](https://github.com/timcomport) · [@Bricklou](https://github.com/Bricklou)
+
+<a href="https://github.com/jztan/redmine-mcp-server/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=jztan/redmine-mcp-server" alt="Contributors" />
+</a>
+
+Per-release contributor credits are listed in the [Changelog](./CHANGELOG.md).
 
 ## License
 
