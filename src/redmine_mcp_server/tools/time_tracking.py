@@ -1,11 +1,13 @@
-"""Time tracking tools: list, manage (create/update), activities, bulk import."""
+"""Time tracking tools: list, manage (create/update), activities, bulk import, report."""
 
 import asyncio
 from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import Field
+import json
 
-from .._client import _get_redmine_client, logger
+from pydantic import BeforeValidator, Field
+
+from .._client import _get_redmine_client, _raw_get, logger
 from .._decorators import ActionMode, action_dispatch
 from .._env import _is_read_only_mode
 from .._errors import _READ_ONLY_ERROR, _handle_redmine_error, _scrub_error_message
@@ -14,7 +16,7 @@ from .._serialization import (
     _safe_isoformat,
     wrap_insecure_content,
 )
-from .._validation import _is_positive_int, _validate_hours
+from .._validation import _is_positive_int, _is_valid_project_id, _validate_hours
 from ..server import mcp
 
 # Maximum entries in a single `import_time_entries` call. Redmine has no
@@ -536,3 +538,159 @@ async def import_time_entries(
         "created": created,
         "errors": errors,
     }
+
+
+def _coerce_str_to_list(v: object) -> object:
+    """Parse JSON-encoded string arrays into real lists.
+
+    FastMCP omits ``type: array`` from the JSON schema for List[Literal[...]]
+    parameters, so LLM clients send '["user"]' (a string) instead of ["user"]
+    (an array).  This validator runs before Pydantic's type check and fixes it.
+    """
+    if isinstance(v, str):
+        try:
+            parsed = json.loads(v)
+            return parsed if isinstance(parsed, list) else [parsed]
+        except (json.JSONDecodeError, ValueError):
+            return [v]
+    return v
+
+
+_PERIOD_MAP: Dict[str, str] = {
+    "today": "t",
+    "this_week": "w",
+    "last_week": "lw",
+    "this_month": "m",
+    "last_month": "lm",
+    "this_year": "y",
+}
+
+
+@mcp.tool()
+async def get_time_entry_report(
+    project_id: Optional[Union[str, int]] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    period: Optional[
+        Literal["today", "this_week", "last_week", "this_month", "last_month", "this_year"]
+    ] = None,
+    user_id: Optional[int] = None,
+    activity_id: Optional[int] = None,
+    criteria: Optional[
+        Annotated[
+            List[Literal["user", "project", "issue", "activity", "version"]],
+            BeforeValidator(_coerce_str_to_list),
+        ]
+    ] = None,
+    columns: Literal["day", "week", "month", "year"] = "month",
+) -> Dict[str, Any]:
+    """Get aggregated time entry report from Redmine.
+
+    Calls ``GET /time_entries/report.json`` (or the project-scoped variant)
+    to return hours summarised by the specified grouping criteria and broken
+    into time-period columns. Unlike ``list_time_entries``, which returns
+    individual log rows, this endpoint returns grouped/aggregated totals —
+    suitable for timesheets, billing summaries, and workload overviews.
+
+    Args:
+        project_id: Limit the report to one project (ID or identifier string).
+        from_date: Start of custom date range (YYYY-MM-DD). Mutually
+            exclusive with ``period``.
+        to_date: End of custom date range (YYYY-MM-DD). Mutually exclusive
+            with ``period``.
+        period: Predefined time window. Mutually exclusive with
+            ``from_date``/``to_date``. One of: ``"today"``,
+            ``"this_week"``, ``"last_week"``, ``"this_month"``,
+            ``"last_month"``, ``"this_year"``.
+        user_id: Filter entries by this user ID.
+        activity_id: Filter entries by this activity ID.
+        criteria: Row grouping. Provide a list of one or more:
+            ``"user"``, ``"project"``, ``"issue"``,
+            ``"activity"``, ``"version"``. Defaults to ``["user"]``.
+        columns: Column time granularity: ``"day"``, ``"week"``,
+            ``"month"`` (default), ``"year"``.
+
+    Returns:
+        Raw Redmine report JSON with aggregated hours keyed by criteria and
+        time-period columns, or ``{"error": "..."}`` on failure.
+
+    Examples:
+        >>> await get_time_entry_report(period="this_month")
+        {"time_entries": {"time_entries": [...], "total_hours": 42.5}}
+
+        >>> await get_time_entry_report(
+        ...     project_id="my-project",
+        ...     from_date="2024-01-01",
+        ...     to_date="2024-03-31",
+        ...     criteria=["user", "activity"],
+        ...     columns="week",
+        ... )
+        {"time_entries": {...}}
+    """
+    if period and (from_date or to_date):
+        return {"error": "Specify either period or from_date/to_date, not both."}
+
+    if project_id is not None and not _is_valid_project_id(project_id):
+        return {
+            "error": (
+                "project_id must be a positive integer or a lowercase "
+                "Redmine identifier (letters, digits, hyphens, underscores)."
+            )
+        }
+
+    if project_id is not None:
+        path = f"/projects/{project_id}/time_entries/report.json"
+    else:
+        path = "/time_entries/report.json"
+
+    params: List[tuple] = [
+        ("set_filter", "1"),
+        ("display_type", "report"),
+        ("columns", columns),
+    ]
+
+    if period:
+        params += [("f[]", "spent_on"), ("op[spent_on]", _PERIOD_MAP[period])]
+    elif from_date or to_date:
+        params += [("f[]", "spent_on"), ("op[spent_on]", "><")]
+        if from_date:
+            params.append(("v[spent_on][]", from_date))
+        if to_date:
+            params.append(("v[spent_on][]", to_date))
+
+    if user_id is not None:
+        params += [
+            ("f[]", "user_id"),
+            ("op[user_id]", "="),
+            ("v[user_id][]", str(user_id)),
+        ]
+    if activity_id is not None:
+        params += [
+            ("f[]", "activity_id"),
+            ("op[activity_id]", "="),
+            ("v[activity_id][]", str(activity_id)),
+        ]
+    params.append(("f[]", ""))  # end-of-filters sentinel
+
+    for criterion in (criteria or ["user"]):
+        params.append(("criteria[]", criterion))
+
+    params += [("t[]", "hours"), ("t[]", "")]
+
+    try:
+        r = await _raw_get(path, params=params)
+    except (ValueError, TimeoutError, ConnectionError) as exc:
+        return {"error": _scrub_error_message(str(exc))}
+
+    if r.status_code == 401:
+        return {"error": "Authentication failed. Check Redmine credentials."}
+    if r.status_code == 403:
+        body = r.text[:500] if r.text else "(empty)"
+        return {"error": f"Access denied (HTTP 403). Redmine response: {body}"}
+    if r.status_code == 404:
+        if project_id is not None:
+            return {"error": f"Project {project_id!r} not found."}
+        return {"error": "Time entry report endpoint not found (check Redmine version)."}
+    if r.status_code >= 400:
+        return {"error": f"Redmine returned HTTP {r.status_code}."}
+    return r.json()
