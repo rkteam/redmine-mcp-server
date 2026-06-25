@@ -20,7 +20,7 @@ def _is_agile_enabled() -> bool:
 
 
 def _is_checklists_enabled() -> bool:
-    """Check if RedmineUP Checklists plugin support is enabled."""
+    """Check if checklist plugin support is enabled."""
     return _is_true_env("REDMINE_CHECKLISTS_ENABLED", "false")
 
 
